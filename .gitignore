@@ -1,0 +1,37 @@
+# Ignore everything at the root level by default
+/*
+
+# Un-ignore the code directory and this file
+!.gitignore
+!code/
+
+# Within code/, exclude document/output file types
+code/**/*.pdf
+code/**/*.docx
+code/**/*.html
+
+# Python
+code/**/__pycache__/
+code/**/*.py[cod]
+code/**/*.pyo
+code/**/*.egg-info/
+code/**/.eggs/
+code/**/dist/
+code/**/build/
+
+# Jupyter
+code/**/.ipynb_checkpoints/
+
+# Virtual environments
+code/**/.venv/
+code/**/venv/
+code/**/env/
+
+# IDE
+code/**/.idea/
+code/**/.vscode/
+
+# OS
+code/**/.DS_Store
+code/**/Thumbs.db
+course_website/
