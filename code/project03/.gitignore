@@ -1,0 +1,11 @@
+.env
+reports.json
+chats.json
+schema_snapshot.json
+schema_changelog.json
+schema_reviews.log
+*.duckdb
+*.duckdb.wal
+__pycache__/
+eval_results/
+.venv/

@@ -1,0 +1,86 @@
+# Semantic layer for the TPC-H sales database.
+# This is the human-reviewed source of truth for business definitions.
+
+description: >
+  Wholesale supplier sales data. Customers place orders; each order has line
+  items; line items reference parts and the suppliers who provided them.
+  Customers and suppliers each belong to a nation, and nations belong to regions.
+
+tables:
+  orders: one row per order (o_orderkey, o_custkey, o_orderdate, o_orderstatus, o_totalprice, o_orderpriority)
+  lineitem: one row per item on an order (l_orderkey, l_partkey, l_suppkey, l_quantity, l_extendedprice, l_discount, l_returnflag, l_shipdate, l_commitdate, l_receiptdate)
+  customer: one row per customer (c_custkey, c_name, c_nationkey, c_mktsegment, c_acctbal)
+  supplier: one row per supplier (s_suppkey, s_name, s_nationkey)
+  part: one row per part sold (p_partkey, p_name, p_brand, p_type)
+  nation: lookup (n_nationkey, n_name, n_regionkey)
+  region: lookup (r_regionkey, r_name) — the 5 regions are AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST
+
+joins:
+  - lineitem.l_orderkey = orders.o_orderkey
+  - orders.o_custkey = customer.c_custkey
+  - customer.c_nationkey = nation.n_nationkey   # customer geography
+  - lineitem.l_suppkey = supplier.s_suppkey
+  - supplier.s_nationkey = nation.n_nationkey   # supplier geography
+  - nation.n_regionkey = region.r_regionkey
+  - lineitem.l_partkey = part.p_partkey
+
+metrics:
+  revenue: >
+    SUM(l_extendedprice * (1 - l_discount)) from lineitem. This is THE revenue
+    definition. Never use o_totalprice for revenue (it includes tax).
+  order_count: COUNT(DISTINCT o_orderkey), or COUNT(*) on orders when not joined
+  average_order_value: AVG(o_totalprice) from orders
+  ship_delay: l_shipdate - o_orderdate, in days
+  late_shipment: a lineitem where l_receiptdate > l_commitdate
+  return_rate: fraction of lineitems with l_returnflag = 'R'
+  open_order: an order with o_orderstatus = 'O'
+  high_priority: o_orderpriority IN ('1-URGENT', '2-HIGH')
+
+conventions:
+  - '"last week" means the 7 full days ending yesterday, i.e. date column BETWEEN current_date - 7 AND current_date - 1'
+  - '"last month" means the 30 full days ending yesterday, i.e. date column BETWEEN current_date - 30 AND current_date - 1'
+  - '"last N days" means BETWEEN current_date - N AND current_date - 1'
+  - 'monthly trends ("by month", "last N months") mean GROUP BY date_trunc(''month'', date column), filtered to date column >= date_trunc(''month'', current_date) - INTERVAL N MONTH and <= current_date - 1'
+  - 'when a follow-up question changes the time period, the new period REPLACES the previous one -- do not keep the earlier filter'
+  - order-level time filters use o_orderdate; shipping questions use l_shipdate
+  - geography of a sale is the CUSTOMER's nation/region unless the question is about suppliers
+  - money values rounded to 2 decimals in final output
+  - percentages expressed on a 0-100 scale, rounded to 2 decimals
+
+verified_queries:
+  - question: How many orders were placed last week?
+    sql: |
+      SELECT COUNT(*) AS order_count
+      FROM orders
+      WHERE o_orderdate BETWEEN current_date - 7 AND current_date - 1
+  - question: What was revenue by region last month?
+    sql: |
+      SELECT r.r_name AS region, ROUND(SUM(l.l_extendedprice * (1 - l.l_discount)), 2) AS revenue
+      FROM lineitem l
+      JOIN orders o ON l.l_orderkey = o.o_orderkey
+      JOIN customer c ON o.o_custkey = c.c_custkey
+      JOIN nation n ON c.c_nationkey = n.n_nationkey
+      JOIN region r ON n.n_regionkey = r.r_regionkey
+      WHERE o.o_orderdate BETWEEN current_date - 30 AND current_date - 1
+      GROUP BY r.r_name
+      ORDER BY revenue DESC
+  - question: What was the monthly revenue trend over the last 6 months?
+    sql: |
+      SELECT date_trunc('month', o.o_orderdate) AS month,
+             ROUND(SUM(l.l_extendedprice * (1 - l.l_discount)), 2) AS revenue
+      FROM lineitem l
+      JOIN orders o ON l.l_orderkey = o.o_orderkey
+      WHERE o.o_orderdate >= date_trunc('month', current_date) - INTERVAL 6 MONTH
+        AND o.o_orderdate <= current_date - 1
+      GROUP BY 1
+      ORDER BY 1
+  - question: Which supplier nation has the highest average ship delay?
+    sql: |
+      SELECT n.n_name AS nation, ROUND(AVG(l.l_shipdate - o.o_orderdate), 2) AS avg_ship_delay_days
+      FROM lineitem l
+      JOIN orders o ON l.l_orderkey = o.o_orderkey
+      JOIN supplier s ON l.l_suppkey = s.s_suppkey
+      JOIN nation n ON s.s_nationkey = n.n_nationkey
+      GROUP BY n.n_name
+      ORDER BY avg_ship_delay_days DESC
+      LIMIT 1
