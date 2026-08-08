@@ -7,18 +7,65 @@
   accept "the model said so." SQL is precise; LLMs are plausible.
 - Thesis: don't let the LLM compute answers. Let it *write SQL*, constrain it hard,
   and make every answer auditable.
+- **The ladder of naive options** (ask of each: where does the number come from,
+  and who defined what it means?):
+  1. *Paste a CSV into claude.ai*: data becomes tokens; the model does mental math
+     over rows — confident, plausible, unreliable, and silent about it. Context
+     limits truncate big files. Stale snapshot, no artifact to audit.
+  2. *Point an agent (Cowork) at a spreadsheet*: better than people think — it writes
+     and executes real code, so numbers are computed. But meanings are re-guessed
+     every session (same question, different day, different answer), no rails
+     (arbitrary code, not one validated SELECT), one exported file, nothing reusable.
+     Great for exploration; not a regime.
+  3. *Give the agent database credentials*: live data, real SQL, zero governance.
+     Security nightmare (an LLM holding warehouse creds, prompt injection, results
+     flowing into context), schema re-explored every session, no consistency, no
+     saved artifacts. Can get right answers; can't promise them.
+  4. *MCP (what my office tried)*: MCP is transport, not intelligence — it
+     standardizes tool calls but says nothing about what's behind them. Slow (dozens
+     of round trips rediscovering schema per question), wrong (guessed joins and
+     definitions). None of that is MCP's fault or fixed by it. Proof: this app could
+     be exposed AS an MCP server tomorrow — the value is the semantic layer and
+     rails behind the endpoint, which no protocol provides.
+  - One-liner: paste-in predicts numbers; agents compute numbers but guess meanings;
+    credentials get real SQL without governance; MCP standardizes plumbing without
+    adding knowledge. The semantic layer is where meaning gets written down.
+- **Prior art (say this explicitly)**: this pattern is established and productized.
+  Snowflake Cortex Analyst is the mature commercial version — you author a semantic
+  model (YAML: tables, dimensions, measures, synonyms, verified queries) and its
+  managed multi-stage pipeline does constrained text-to-SQL against Snowflake data,
+  with governance/RBAC flowing through automatically. Databricks AI/BI Genie is the
+  same category; dbt MetricFlow and open-source tools (Vanna, WrenAI) are adjacent.
+  Positioning: "I'm not claiming novelty — I built the load-bearing ~300 lines of
+  this architecture, vendor-neutral and fully inspectable, to understand what those
+  products do, what you're paying for, and where the failure modes live." Their
+  advantages: production hardening, warehouse-native governance, multi-turn repair,
+  feedback loops, SLAs. This project's: transparency, any RDBMS, any LLM, and a
+  built-in eval harness (which vendors don't ship — you have to verify accuracy on
+  your own data anyway).
 
 ## 2. The solution (2.5 min)
 - Architecture in one line: question → LLM + semantic layer → SQL → validate → execute
   → narrate. The model never touches data; the database computes every number.
+- The flow of one prompt (two LLM calls total):
+  1. User types a question
+  2. App assembles call #1: system prompt (rules + today's date + semantic layer YAML)
+     + compressed conversation history + the question
+  3. LLM returns text containing a SQL statement — it only writes text
+  4. App code (no LLM): extract SQL, validate — one statement, SELECT-only,
+     allowlisted tables. The model never sees this checkpoint
+  5. Execute on a read-only connection; the database computes the answer
+  6. LLM call #2: question + first rows of the result → one-sentence narration
+     (can only describe rows that actually came back)
+  7. UI: narration + table + SQL in expander; turn joins the history
+  Key point: knowledge (semantic layer) goes IN the prompt; enforcement (validator,
+  read-only) sits AFTER the model, in code it can't influence.
 - **Semantic layer** (the core idea): a human-authored YAML that is the source of
   business truth — table descriptions, join paths, metric definitions (revenue =
   `SUM(l_extendedprice * (1 - l_discount))`, never `o_totalprice` — it includes tax),
   date conventions ("last week" = 7 full days ending yesterday), and verified example
   queries. The LLM's job shrinks from "guess SQL against a raw schema" to "map a
-  question onto definitions humans already blessed." This is what Snowflake Cortex
-  Analyst / Databricks Genie productize; this project builds the load-bearing core
-  to show how it works and where it breaks.
+  question onto definitions humans already blessed."
 - **Validation rails**: sqlglot parses every generated query — exactly one statement,
   SELECT only, allowlisted tables only — executed on a read-only connection.
 - Data: TPC-H (standard benchmark schema, portable to any RDBMS), generated in DuckDB,

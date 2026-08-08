@@ -66,7 +66,7 @@ verified_queries:
       ORDER BY revenue DESC
   - question: What was the monthly revenue trend over the last 6 months?
     sql: |
-      SELECT date_trunc('month', o.o_orderdate) AS month,
+      SELECT CAST(date_trunc('month', o.o_orderdate) AS DATE) AS month,
              ROUND(SUM(l.l_extendedprice * (1 - l.l_discount)), 2) AS revenue
       FROM lineitem l
       JOIN orders o ON l.l_orderkey = o.o_orderkey

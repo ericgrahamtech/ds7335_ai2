@@ -63,6 +63,11 @@ def build_context(con, use_semantic_layer):
     return "Database schema:\n" + get_raw_schema(con)
 
 
+def response_text(resp):
+    # models with extended thinking return thinking blocks before the text block
+    return "".join(b.text for b in resp.content if b.type == "text")
+
+
 def extract_sql(text):
     m = re.search(r"```sql\s*(.*?)```", text, re.DOTALL)
     return m.group(1).strip() if m else None
@@ -109,7 +114,7 @@ def run_chat(question, history, model="claude-haiku-4-5", use_semantic_layer=Tru
     system = f"{SYSTEM}\n{CHAT_RULES}\nToday's date: {date.today()}.\n\n{context}"
     messages = render_history(history) + [{"role": "user", "content": question}]
     resp = client().messages.create(model=model, max_tokens=1024, system=system, messages=messages)
-    raw = resp.content[0].text
+    raw = response_text(resp)
     tokens = resp.usage.input_tokens + resp.usage.output_tokens
     sql = extract_sql(raw)
     result = {"question": question, "sql": sql, "tokens": tokens,
@@ -153,16 +158,20 @@ def standalone_question(question, history, model="claude-haiku-4-5"):
                        f"Return only the question:\n{question}",
         }],
     )
-    return resp.content[0].text.strip()
+    return response_text(resp).strip()
 
 
 def narrate(question, df, model="claude-haiku-4-5"):
+    sample = df.head(100)
+    note = f"\n(showing first 100 of {len(df)} rows)" if len(df) > 100 else ""
     resp = client().messages.create(
         model=model,
         max_tokens=200,
         messages=[{
             "role": "user",
-            "content": f"Question: {question}\nQuery result:\n{df.head(20).to_string()}\n\nAnswer the question in one or two sentences using only this result.",
+            "content": f"Question: {question}\nQuery result ({len(df)} rows):\n"
+                       f"{sample.to_string()}{note}\n\n"
+                       f"Answer the question in one or two sentences using only this result.",
         }],
     )
-    return resp.content[0].text
+    return response_text(resp)

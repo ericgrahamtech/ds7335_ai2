@@ -130,7 +130,7 @@ with tab_chat:
             if t["error"]:
                 st.error(t["error"])
             else:
-                st.write(t["answer"])
+                st.write(t["answer"].replace("$", "\\$"))  # bare $ triggers latex in markdown
                 if t.get("df") is not None:
                     st.dataframe(t["df"])
                     c1, c2 = st.columns([1, 6])

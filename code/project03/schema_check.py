@@ -4,7 +4,7 @@ from datetime import datetime
 
 import yaml
 
-from pipeline import client
+from pipeline import client, response_text
 
 SNAPSHOT_FILE = "schema_snapshot.json"
 CHANGELOG_FILE = "schema_changelog.json"
@@ -122,6 +122,6 @@ Return the complete updated semantic layer in a ```yaml code block.
         model=model, max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = resp.content[0].text
+    text = response_text(resp)
     m = re.search(r"```yaml\s*(.*?)```", text, re.DOTALL)
     return m.group(1).strip() if m else text.strip()
